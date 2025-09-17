@@ -29,17 +29,42 @@ def extract_product_data(url):
         print(f"URL: {url}")
         driver.get(url)
 
-        # 페이지가 로드될 때까지 최대 10초 대기
+        # 페이지가 로드될 때까지 최대 15초 대기
         print("페이지가 로드되기를 기다립니다...")
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.plp-fragment-wrapper"))
         )
         print("초기 페이지 로드 완료.")
+        
+        # 추가 대기 시간 (동적 콘텐츠 로딩을 위해)
+        time.sleep(3)
+        print("동적 콘텐츠 로딩을 위해 3초 대기...")
 
         # --- plp-fragment-wrapper 아이템들의 데이터 수집 ---
         item_selector = "div.plp-fragment-wrapper"
         item_elements = driver.find_elements(By.CSS_SELECTOR, item_selector)
         print(f"총 {len(item_elements)}개의 아이템을 찾았습니다.")
+        
+        # 첫 번째 아이템이 제대로 로드되었는지 확인
+        if len(item_elements) > 0:
+            try:
+                first_item = item_elements[0]
+                print("첫 번째 아이템 확인 중...")
+                # 첫 번째 아이템에서 이름이 있는지 확인
+                name_elements = first_item.find_elements(By.CSS_SELECTOR, "span.plp-price-module__product-name")
+                if name_elements:
+                    print(f"첫 번째 아이템 이름: {name_elements[0].text.strip()}")
+                else:
+                    print("첫 번째 아이템에서 이름을 찾을 수 없습니다. 추가 대기...")
+                    time.sleep(2)
+                    # 다시 요소들을 찾기
+                    item_elements = driver.find_elements(By.CSS_SELECTOR, item_selector)
+                    print(f"재검색 후 총 {len(item_elements)}개의 아이템을 찾았습니다.")
+            except Exception as e:
+                print(f"첫 번째 아이템 확인 중 오류: {e}")
+                time.sleep(2)
+                item_elements = driver.find_elements(By.CSS_SELECTOR, item_selector)
+                print(f"재검색 후 총 {len(item_elements)}개의 아이템을 찾았습니다.")
         
         products = []
         for i in range(len(item_elements)):
@@ -54,35 +79,78 @@ def extract_product_data(url):
                 item = current_items[i]
                 product_data = {}
                 
+                # 첫 번째 아이템에 대한 특별한 처리
+                if i == 0:
+                    print(f"\n=== 첫 번째 아이템 처리 중 ===")
+                    print(f"첫 번째 아이템 HTML 구조 확인 중...")
+                    
+                    # 첫 번째 아이템의 경우 추가 대기
+                    time.sleep(2)
+                    
+                    # 요소가 완전히 로드되었는지 확인
+                    try:
+                        # 다양한 선택자로 이름 요소 확인
+                        name_selectors_check = [
+                            "span.plp-price-module__product-name",
+                            "div.plp-mastercard span.plp-price-module__product-name",
+                            "h3.plp-price-module__product-name",
+                            "div.plp-mastercard h3"
+                        ]
+                        
+                        name_found_in_check = False
+                        for selector in name_selectors_check:
+                            name_elements = item.find_elements(By.CSS_SELECTOR, selector)
+                            if name_elements and name_elements[0].text.strip():
+                                print(f"첫 번째 아이템에서 이름 발견: {name_elements[0].text.strip()}")
+                                name_found_in_check = True
+                                break
+                        
+                        if not name_found_in_check:
+                            print("첫 번째 아이템이 아직 완전히 로드되지 않았습니다. 추가 대기...")
+                            time.sleep(3)
+                            # 다시 요소 찾기
+                            current_items = driver.find_elements(By.CSS_SELECTOR, item_selector)
+                            if len(current_items) > 0:
+                                item = current_items[0]
+                                print("첫 번째 아이템을 다시 찾았습니다.")
+                            else:
+                                print("첫 번째 아이템을 다시 찾을 수 없습니다.")
+                                continue
+                    except Exception as e:
+                        print(f"첫 번째 아이템 확인 중 오류: {e}")
+                        time.sleep(2)
+                
                 # 각 데이터 추출 시마다 요소를 다시 찾기
                 try:
                     # 1. 이름 추출 - 여러 선택자 시도
-                    try:
-                        # 현재 아이템을 다시 찾기
-                        current_items = driver.find_elements(By.CSS_SELECTOR, item_selector)
-                        if i < len(current_items):
-                            item = current_items[i]
-                            # 먼저 plp-mastercard 안에서 찾기
-                            name_element = item.find_element(By.CSS_SELECTOR, "div.plp-mastercard span.plp-price-module__product-name")
-                            product_data['name'] = name_element.text.strip()
-                            print(f"{i+1}. {product_data['name']}")
-                        else:
-                            product_data['name'] = ""
-                    except Exception as e1:
+                    name_found = False
+                    name_selectors = [
+                        "div.plp-mastercard span.plp-price-module__product-name",
+                        "span.plp-price-module__product-name",
+                        "h3.plp-price-module__product-name",
+                        "div.plp-mastercard h3",
+                        "a[data-testid='product-link'] span",
+                        "a[data-testid='product-link'] h3"
+                    ]
+                    
+                    for selector in name_selectors:
                         try:
                             # 현재 아이템을 다시 찾기
                             current_items = driver.find_elements(By.CSS_SELECTOR, item_selector)
                             if i < len(current_items):
                                 item = current_items[i]
-                                # 다른 선택자로 시도
-                                name_element = item.find_element(By.CSS_SELECTOR, "span.plp-price-module__product-name")
-                                product_data['name'] = name_element.text.strip()
-                                print(f"{i+1}. {product_data['name']}")
-                            else:
-                                product_data['name'] = ""
-                        except Exception as e2:
-                            print(f"아이템 {i+1} 이름 추출 실패: {e1}, {e2}")
-                            product_data['name'] = ""
+                                name_element = item.find_element(By.CSS_SELECTOR, selector)
+                                if name_element and name_element.text.strip():
+                                    product_data['name'] = name_element.text.strip()
+                                    print(f"{i+1}. {product_data['name']}")
+                                    name_found = True
+                                    break
+                        except Exception as e:
+                            continue
+                    
+                    if not name_found:
+                        print(f"아이템 {i+1} 이름 추출 실패 - 모든 선택자 시도 완료")
+                        product_data['name'] = ""
                     
                     # 2. 사진 URL 추출 (첫 번째 이미지)
                     try:
@@ -399,15 +467,48 @@ def save_to_excel(products, filename_prefix="ikea_products"):
         
         # 모든 셀을 가운데 정렬 (가로, 세로 모두)
         from openpyxl.styles import Alignment
+        from openpyxl.styles import Font
+        from openpyxl.worksheet.hyperlink import Hyperlink
+        
         for row in worksheet.iter_rows():
             for cell in row:
                 cell.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # 링크 컬럼(F열)에 하이퍼링크 적용
+        print("하이퍼링크를 적용하는 중...")
+        for i, product in enumerate(products, start=2):  # 2부터 시작 (헤더 제외)
+            if product.get('product_url'):
+                link_cell = worksheet[f'F{i}']  # F열은 링크 컬럼
+                try:
+                    # 하이퍼링크 생성
+                    hyperlink = Hyperlink(target=product['product_url'], display=product['product_url'])
+                    link_cell.hyperlink = hyperlink
+                    # 링크 스타일 적용 (파란색, 밑줄)
+                    link_cell.font = Font(color="0000FF", underline="single")
+                    print(f"하이퍼링크 적용: {i-1}/{len(products)} - {product.get('name', 'Unknown')}")
+                except Exception as e:
+                    print(f"하이퍼링크 적용 실패 (행 {i}): {e}")
+                    # 하이퍼링크 적용 실패 시 일반 텍스트로 표시
+                    link_cell.value = product['product_url']
 
     print(f"'{filepath}' 파일에 총 {len(products)}개의 제품 정보를 성공적으로 저장했습니다.")
 
 if __name__ == "__main__":
-    TARGET_URL = "https://www.ikea.com/kr/ko/cat/storage-boxes-baskets-10550/?filters=f-materials%3A47675"
-    products = extract_product_data(TARGET_URL)
+    # 사용자로부터 URL 입력 받기
+    print("이케아 제품 크롤링을 시작합니다.")
+    print("예시 URL: https://www.ikea.com/kr/ko/cat/storage-boxes-baskets-10550/")
+    print("=" * 50)
+    
+    target_url = input("크롤링할 이케아 URL을 입력하세요: ").strip()
+    
+    if not target_url:
+        print("URL이 입력되지 않았습니다. 기본 URL을 사용합니다.")
+        target_url = "https://www.ikea.com/kr/ko/cat/storage-boxes-baskets-10550/?filters=f-materials%3A47675"
+    
+    print(f"\n입력된 URL: {target_url}")
+    print("크롤링을 시작합니다...\n")
+    
+    products = extract_product_data(target_url)
     print(f"\n최종 결과: 총 {len(products)}개의 제품 데이터를 수집했습니다.")
     
     # Excel 파일로 저장
